@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI" xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="sid-38422fae-e03e-43a3-bef4-bd33b32041b2" targetNamespace="http://bpmn.io/bpmn" exporter="Camunda Modeler" exporterVersion="5.48.0">
+  <process id="Process_ClaimReturn" isExecutable="true">
+    <startEvent id="Start_Claim" name="收到认领申请">
+      <outgoing>Flow_0e4z9wr</outgoing>
+    </startEvent>
+    <exclusiveGateway id="Gateway_Match" name="证据匹配度≥80？" default="Flow_1oi5m9v">
+      <incoming>Flow_0vqggpy</incoming>
+      <outgoing>Flow_1thxrvz</outgoing>
+      <outgoing>Flow_1oi5m9v</outgoing>
+    </exclusiveGateway>
+    <exclusiveGateway id="Gateway_HighValue" name="是否高价值物品？" default="Flow_0x0ttpa">
+      <incoming>Flow_1thxrvz</incoming>
+      <outgoing>Flow_1f30sjm</outgoing>
+      <outgoing>Flow_0x0ttpa</outgoing>
+    </exclusiveGateway>
+    <serviceTask id="Task_QueryItem" name="查询失物信息" camunda:delegateExpression="${h_query_item}">
+      <incoming>Flow_0e4z9wr</incoming>
+      <outgoing>Flow_0gogw5a</outgoing>
+    </serviceTask>
+    <serviceTask id="Task_VerifyEvidence" name="核验认领证据" camunda:delegateExpression="${h_verify_evidence}">
+      <incoming>Flow_0gogw5a</incoming>
+      <outgoing>Flow_0vqggpy</outgoing>
+    </serviceTask>
+    <serviceTask id="Task_RequestEvidence" name="通知补充证据" camunda:delegateExpression="${h_request_evidence}">
+      <incoming>Flow_1oi5m9v</incoming>
+      <outgoing>Flow_139is62</outgoing>
+    </serviceTask>
+    <serviceTask id="Task_AutoApprove" name="自动通过认领" camunda:delegateExpression="${h_auto_approve}">
+      <incoming>Flow_0x0ttpa</incoming>
+      <outgoing>Flow_0kyp3z6</outgoing>
+    </serviceTask>
+    <serviceTask id="Task_CreateHandover" name="创建交接预约" camunda:delegateExpression="${h_create_handover}">
+      <incoming>Flow_0kyp3z6</incoming>
+      <outgoing>Flow_14leat3</outgoing>
+    </serviceTask>
+    <serviceTask id="Task_Notify" name="通知申请人" camunda:delegateExpression="${h_notify}">
+      <incoming>Flow_139is62</incoming>
+      <incoming>Flow_14leat3</incoming>
+      <incoming>Flow_067wcs6</incoming>
+      <outgoing>Flow_079gtgg</outgoing>
+    </serviceTask>
+    <userTask id="Task_ManualReview" name="人工复核">
+      <incoming>Flow_1f30sjm</incoming>
+      <outgoing>Flow_067wcs6</outgoing>
+    </userTask>
+    <sequenceFlow id="Flow_0e4z9wr" sourceRef="Start_Claim" targetRef="Task_QueryItem" />
+    <sequenceFlow id="Flow_0gogw5a" sourceRef="Task_QueryItem" targetRef="Task_VerifyEvidence" />
+    <sequenceFlow id="Flow_0vqggpy" sourceRef="Task_VerifyEvidence" targetRef="Gateway_Match" />
+    <sequenceFlow id="Flow_1thxrvz" name="是" sourceRef="Gateway_Match" targetRef="Gateway_HighValue">
+      <conditionExpression xsi:type="tFormalExpression">${match_score &gt;= 80}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="Flow_1oi5m9v" name="否" sourceRef="Gateway_Match" targetRef="Task_RequestEvidence" />
+    <sequenceFlow id="Flow_139is62" sourceRef="Task_RequestEvidence" targetRef="Task_Notify" />
+    <sequenceFlow id="Flow_1f30sjm" name="是" sourceRef="Gateway_HighValue" targetRef="Task_ManualReview">
+      <conditionExpression xsi:type="tFormalExpression">${high_value == True}</conditionExpression>
+    </sequenceFlow>
+    <endEvent id="End_Claim" name="认领处理完成">
+      <incoming>Flow_079gtgg</incoming>
+    </endEvent>
+    <sequenceFlow id="Flow_079gtgg" sourceRef="Task_Notify" targetRef="End_Claim" />
+    <sequenceFlow id="Flow_0x0ttpa" name="否" sourceRef="Gateway_HighValue" targetRef="Task_AutoApprove" />
+    <sequenceFlow id="Flow_0kyp3z6" sourceRef="Task_AutoApprove" targetRef="Task_CreateHandover" />
+    <sequenceFlow id="Flow_14leat3" sourceRef="Task_CreateHandover" targetRef="Task_Notify" />
+    <sequenceFlow id="Flow_067wcs6" sourceRef="Task_ManualReview" targetRef="Task_Notify" />
+  </process>
+  <bpmndi:BPMNDiagram id="BpmnDiagram_1">
+    <bpmndi:BPMNPlane id="BpmnPlane_1" bpmnElement="Process_ClaimReturn">
+      <bpmndi:BPMNShape id="StartEvent_1y45yut_di" bpmnElement="Start_Claim">
+        <omgdc:Bounds x="172" y="252" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <omgdc:Bounds x="158" y="295" width="66" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_1dxfqo6_di" bpmnElement="Gateway_Match" isMarkerVisible="true">
+        <omgdc:Bounds x="545" y="245" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <omgdc:Bounds x="527" y="221" width="85" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_1qs1unt_di" bpmnElement="Gateway_HighValue" isMarkerVisible="true">
+        <omgdc:Bounds x="665" y="245" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <omgdc:Bounds x="646" y="296" width="88" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_192fz3w_di" bpmnElement="Task_QueryItem">
+        <omgdc:Bounds x="260" y="230" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_1xys0j3_di" bpmnElement="Task_VerifyEvidence">
+        <omgdc:Bounds x="400" y="230" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_02wexwc_di" bpmnElement="Task_RequestEvidence">
+        <omgdc:Bounds x="810" y="380" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_0hvzuci_di" bpmnElement="Task_AutoApprove">
+        <omgdc:Bounds x="810" y="230" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_12jmgs4_di" bpmnElement="Task_CreateHandover">
+        <omgdc:Bounds x="990" y="230" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_1jebe5c_di" bpmnElement="Task_Notify">
+        <omgdc:Bounds x="1170" y="230" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_12j7qi8_di" bpmnElement="Task_ManualReview">
+        <omgdc:Bounds x="1170" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_0qyq7vl_di" bpmnElement="End_Claim">
+        <omgdc:Bounds x="1342" y="252" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <omgdc:Bounds x="1327" y="296" width="66" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_0e4z9wr_di" bpmnElement="Flow_0e4z9wr">
+        <omgdi:waypoint x="208" y="270" />
+        <omgdi:waypoint x="260" y="270" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0gogw5a_di" bpmnElement="Flow_0gogw5a">
+        <omgdi:waypoint x="360" y="270" />
+        <omgdi:waypoint x="400" y="270" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0vqggpy_di" bpmnElement="Flow_0vqggpy">
+        <omgdi:waypoint x="500" y="270" />
+        <omgdi:waypoint x="545" y="270" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1thxrvz_di" bpmnElement="Flow_1thxrvz">
+        <omgdi:waypoint x="595" y="270" />
+        <omgdi:waypoint x="665" y="270" />
+        <bpmndi:BPMNLabel>
+          <omgdc:Bounds x="625" y="247" width="11" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1oi5m9v_di" bpmnElement="Flow_1oi5m9v">
+        <omgdi:waypoint x="570" y="295" />
+        <omgdi:waypoint x="570" y="420" />
+        <omgdi:waypoint x="810" y="420" />
+        <bpmndi:BPMNLabel>
+          <omgdc:Bounds x="575" y="351" width="11" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_139is62_di" bpmnElement="Flow_139is62">
+        <omgdi:waypoint x="910" y="420" />
+        <omgdi:waypoint x="1220" y="420" />
+        <omgdi:waypoint x="1220" y="310" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1f30sjm_di" bpmnElement="Flow_1f30sjm">
+        <omgdi:waypoint x="690" y="245" />
+        <omgdi:waypoint x="690" y="120" />
+        <omgdi:waypoint x="1170" y="120" />
+        <bpmndi:BPMNLabel>
+          <omgdc:Bounds x="928" y="102" width="11" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_079gtgg_di" bpmnElement="Flow_079gtgg">
+        <omgdi:waypoint x="1270" y="270" />
+        <omgdi:waypoint x="1342" y="270" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0x0ttpa_di" bpmnElement="Flow_0x0ttpa">
+        <omgdi:waypoint x="715" y="270" />
+        <omgdi:waypoint x="810" y="270" />
+        <bpmndi:BPMNLabel>
+          <omgdc:Bounds x="757" y="252" width="11" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0kyp3z6_di" bpmnElement="Flow_0kyp3z6">
+        <omgdi:waypoint x="910" y="270" />
+        <omgdi:waypoint x="990" y="270" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_14leat3_di" bpmnElement="Flow_14leat3">
+        <omgdi:waypoint x="1090" y="270" />
+        <omgdi:waypoint x="1170" y="270" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_067wcs6_di" bpmnElement="Flow_067wcs6">
+        <omgdi:waypoint x="1220" y="160" />
+        <omgdi:waypoint x="1220" y="230" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

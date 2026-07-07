@@ -76,10 +76,15 @@ Invoke-NativeChecked "docker compose config" {
 $ExistingTags = @()
 $ExistingCount = 0
 foreach ($Service in $Images.Keys) {
-    $ContainerId = Invoke-NativeOutput "docker compose ps $Service" {
+    $ContainerIdRaw = Invoke-NativeOutput "docker compose ps $Service" {
         docker compose -p $ProjectName -f $ComposeFile ps -q $Service
     }
-    $ContainerId = ($ContainerId | Select-Object -First 1).Trim()
+    $ContainerIdLine = $ContainerIdRaw | Select-Object -First 1
+    $ContainerId = if ($null -eq $ContainerIdLine) {
+        ""
+    } else {
+        ([string]$ContainerIdLine).Trim()
+    }
     if ([string]::IsNullOrWhiteSpace($ContainerId)) {
         continue
     }

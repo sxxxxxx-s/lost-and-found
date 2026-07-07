@@ -132,6 +132,25 @@ class PowerShellAssetTests(unittest.TestCase):
                     "$HOME is a read-only PowerShell variable",
                 )
 
+    def test_scripts_do_not_trim_null_native_output(self):
+        for name in ("Test-Compose.ps1", "Deploy-Compose.ps1"):
+            with self.subTest(script=name):
+                text = self.script(name)
+                self.assertNotIn(
+                    "$ContainerId = ($ContainerIdRaw | Select-Object -First 1).Trim()",
+                    text,
+                )
+                self.assertNotIn(
+                    "$ContainerId = ($ContainerId | Select-Object -First 1).Trim()",
+                    text,
+                )
+
+    def test_deploy_script_allows_first_deployment_without_existing_containers(self):
+        text = self.script("Deploy-Compose.ps1")
+        self.assertIn("$ContainerIdLine = $ContainerIdRaw | Select-Object -First 1", text)
+        self.assertIn("if ($null -eq $ContainerIdLine)", text)
+        self.assertIn("continue", text)
+
 
 class WorkflowAssetTests(unittest.TestCase):
     def setUp(self):

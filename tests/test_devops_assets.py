@@ -96,6 +96,23 @@ class PowerShellAssetTests(unittest.TestCase):
         self.assertIn("帮我找图书馆发现的黑色耳机", script)
         self.assertNotIn("甯", script)
 
+    def test_monitor_services_script_collects_layered_metrics(self):
+        text = self.script("Monitor-Services.ps1")
+        self.assert_strict_script(text)
+        for marker in (
+            "OutputPath",
+            "IncludeDockerStats",
+            "ConvertTo-Json",
+            "docker stats --no-stream",
+            "/healthz",
+            "/api/chat",
+            "Measure-Endpoint",
+            "LatencyMs",
+            "Throughput",
+            "SuccessRate",
+        ):
+            self.assertIn(marker, text)
+
     def test_deploy_script_preflights_deploys_and_rolls_back(self):
         text = self.script("Deploy-Compose.ps1")
         self.assert_strict_script(text)

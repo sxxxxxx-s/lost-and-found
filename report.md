@@ -531,9 +531,65 @@ OK
 
 ## 4.2 监控工具及应用方法
 
-本次监控采用“容器运行监控 + 接口烟测 + 自动化测试 + 离线评测 + 简单吞吐测试”的组合方式。该方式适合当前教学原型，能够覆盖资源参数、调用参数、时间参数和异常处理参数。
+原始监控方式主要依赖人工执行命令和截图，能够证明系统可运行，但不利于连续比较不同版本的服务质量。优化后采用“分层采集、统一记录、按 SLA 指标评价”的方式，把监控过程拆成资源层、健康层、接口层、业务层和外部依赖层五类数据。
 
-### 4.2.1 容器与资源监控
+优化后的监控闭环如下：
+
+```text
+启动部署
+  → 容器资源监控：CPU、内存、网络 I/O、重启状态
+  → 健康检查监控：/healthz、Compose healthy、端口暴露
+  → 接口性能监控：响应时间、状态码、成功率、错误率
+  → 业务质量监控：Agent 评测通过率、BPMN 分支正确性、护栏拦截
+  → 外部依赖监控：OpenAI 兼容 API 或 MockLLM 的延迟、失败率
+  → 汇总 SLA 指标：效率、可用性、健壮性、吞吐率
+```
+
+这种方式比单纯截图更完整：资源数据说明服务是否稳定运行，健康检查说明服务是否可访问，接口数据说明请求是否及时完成，业务评测说明 Agent 和流程是否正确，外部依赖监控说明大模型 API 是否影响整体质量。
+
+### 4.2.1 优化后的分层监控方案
+
+| 监控层次 | 监控对象 | 关键指标 | 工具或命令 | 截图位置 |
+|---|---|---|---|---|
+| 资源层 | 四个 Docker 容器 | CPU、内存、网络 I/O、块 I/O、容器重启 | `docker stats --no-stream`、Docker Desktop | Docker Desktop 资源界面或终端输出 |
+| 健康层 | `web-agent`、三个内部微服务 | `healthy` 状态、`/healthz` 成功率、端口暴露情况 | `docker compose ps`、`scripts/Test-Compose.ps1` | Compose 服务列表和烟测结果 |
+| 接口层 | `/api/chat`、`/items`、`/claims`、`/slots` 等接口 | HTTP 状态码、平均响应时间、最大响应时间、错误率 | `curl.exe -w`、PowerShell 连续调用脚本 | 单接口响应时间和吞吐率结果 |
+| 业务层 | Agent、BPMN、RAG、护栏 | 评测通过率、BPMN 路径正确率、越权/注入拦截率 | `python -X utf8 -B evaluate.py`、`unittest` | 评测通过率和测试结果 |
+| 依赖层 | OpenAI 兼容 API 或 MockLLM | LLM 请求耗时、超时次数、失败率、回退状态 | `/api/chat` latency、模型调用日志 | 真实 API 模式下的调用日志或控制台输出 |
+
+监控数据建议按一次评价周期统一记录，周期可以是“每次部署后”或“每次实验演示前”。每次记录至少包含：
+
+| 记录项 | 建议内容 |
+|---|---|
+| 版本信息 | Git commit SHA、镜像 tag、`IMAGE_TAG` |
+| 部署状态 | 四个容器是否 healthy，是否只有 `web-agent` 暴露宿主机端口 |
+| 资源数据 | 每个容器 CPU、内存、网络 I/O |
+| 接口数据 | 核心接口响应时间、成功数、失败数、TPS |
+| 业务数据 | `evaluate.py` 通过率、单元测试通过数 |
+| 异常数据 | 404、403、409、非法 JSON、提示注入、越权访问的处理结果 |
+
+为了减少人工复制命令造成的数据遗漏，项目新增轻量监控采集脚本 `scripts/Monitor-Services.ps1`。该脚本会统一采集 Web 健康检查、Compose 容器健康、`/api/chat` 多次调用延迟、吞吐率，并可选采集 Docker 资源数据，最后输出 JSON 文件。
+
+```powershell
+pwsh -NoProfile -File scripts/Monitor-Services.ps1 `
+    -SampleCount 50 `
+    -IncludeDockerStats `
+    -OutputPath metrics/service-monitoring.json
+```
+
+输出文件包含以下主要字段：
+
+| 字段 | 含义 |
+|---|---|
+| `HealthChecks` | `web-agent` 的 `/healthz` 状态、HTTP 状态码和响应时间 |
+| `ComposeHealth` | 四个 Compose 服务的容器 ID 和 health 状态 |
+| `ChatSamples` | 多次 `/api/chat` 请求的状态码、成功标记和 `LatencyMs` |
+| `Throughput` | 总请求数、成功数、失败数、总耗时、每秒请求数和成功率 |
+| `DockerStats` | 启用 `-IncludeDockerStats` 后记录的 CPU、内存、网络 I/O 等容器资源数据 |
+
+截图建议增加一张“图 4-0 统一监控采集结果”，内容为 `metrics/service-monitoring.json` 或脚本终端输出中的 `Throughput`、`ComposeHealth` 和 `DockerStats`。后续服务质量评价表优先引用该 JSON 数据；Docker Desktop 和浏览器截图作为可视化补充证据。
+
+### 4.2.2 容器与资源监控
 
 Docker Compose 用于部署四个服务。`compose.yaml` 中为每个服务设置了资源上限：
 
@@ -568,7 +624,7 @@ docker compose -p lost-found -f compose.yaml logs --tail 200
 | 进程健康状态 | `docker compose ps`、容器 healthcheck | 判断服务是否持续存活 |
 | 日志错误 | `docker compose logs --tail 200` | 观察异常栈、HTTP 错误和重启情况 |
 
-### 4.2.2 健康检查与接口烟测
+### 4.2.3 健康检查与接口烟测
 
 四个服务均提供 `/healthz`。Compose 健康检查配置为每 10 秒检查一次，超时 3 秒，最多重试 6 次。对外服务 `web-agent` 的健康检查地址为：
 
@@ -596,7 +652,7 @@ pwsh -NoProfile -File scripts/Test-Compose.ps1
 - 图 4-4：`scripts/Test-Compose.ps1` 输出 `Compose smoke tests: PASS`。
 - 图 4-5：浏览器访问 `http://localhost:8000/healthz` 返回 `{"status":"ok"}`。
 
-### 4.2.3 调用参数和时间参数监控
+### 4.2.4 调用参数和时间参数监控
 
 `/api/chat` 的响应中包含应用层 `latency` 字段，来源于 `app.py` 中的 `time.perf_counter()`，用于记录一次用户请求从进入护栏到完成 Agent/BPMN 编排的耗时。
 
@@ -629,7 +685,7 @@ python -X utf8 -B -c "from evaluate import run_eval; rows, rate = run_eval(verbo
 
 普通认领场景耗时最高，原因是该请求会触发 BPMN 流程，并依次调用失物、认领和交接三个微服务；提示注入、越权和 PII 脱敏在护栏层短路处理，因此耗时接近 0。
 
-### 4.2.4 吞吐率测试
+### 4.2.5 吞吐率测试
 
 吞吐率使用单位时间内成功完成的请求数量评价：
 

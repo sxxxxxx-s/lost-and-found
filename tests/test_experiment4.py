@@ -18,13 +18,9 @@ from evaluate import judge, run_eval
 from guardrails import authz_guard, input_guard, pii_mask
 from memory import Memory
 from rag import retrieve
-from server import (
-    SESSIONS,
-    WebHandler,
-    start_business_services,
-    stop_servers,
-)
+from server import start_business_services, stop_servers
 from tests.test_services import running_server
+from web_server import SESSIONS, WebHandler
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -179,6 +175,16 @@ class ApplicationTests(unittest.TestCase):
         self.assertIn("query_claim", result["trace"])
 
 
+class WebRuntimeTests(unittest.TestCase):
+    def test_web_health_does_not_require_business_services(self):
+        with running_server(WebHandler) as base:
+            with urllib.request.urlopen(base + "/healthz", timeout=3) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload, {"status": "ok"})
+
+
 class ServerTests(unittest.TestCase):
     def test_business_runtime_configures_three_temporary_urls(self):
         servers = start_business_services((0, 0, 0))
@@ -193,7 +199,7 @@ class ServerTests(unittest.TestCase):
         finally:
             stop_servers(servers)
 
-    @patch("server.serve_struct")
+    @patch("web_server.serve_struct")
     def test_chat_api_validates_input_and_keeps_memories_separate(self, mocked):
         mocked.return_value = {
             "reply": "ok",

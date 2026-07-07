@@ -276,5 +276,15 @@ class HandoverServiceTests(unittest.TestCase):
         self.assertEqual(appointment["claim_id"], "CL0001")
 
 
+class HealthEndpointTests(unittest.TestCase):
+    def test_all_business_services_report_local_health(self):
+        for handler in (ItemHandler, ClaimHandler, HandoverHandler):
+            with self.subTest(handler=handler.__name__):
+                with running_server(handler) as base:
+                    status, payload = request_json("GET", base + "/healthz")
+                self.assertEqual(status, 200)
+                self.assertEqual(payload, {"status": "ok"})
+
+
 if __name__ == "__main__":
     unittest.main()

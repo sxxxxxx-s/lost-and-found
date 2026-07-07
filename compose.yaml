@@ -1,0 +1,104 @@
+name: lost-found
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  networks:
+    - backend
+  cpus: 0.50
+  mem_limit: 512m
+
+services:
+  web-agent:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: web-agent
+    image: lost-found/web-agent:${IMAGE_TAG:-dev}
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      ITEM_URL: http://item-service:8001
+      CLAIM_URL: http://claim-service:8002
+      HANDOVER_URL: http://handover-service:8003
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      CHAT_MODEL: ${CHAT_MODEL:-mock-llm}
+      POLICY_K: ${POLICY_K:-2}
+    depends_on:
+      item-service:
+        condition: service_healthy
+      claim-service:
+        condition: service_healthy
+      handover-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+
+  item-service:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: item-service
+    image: lost-found/item-service:${IMAGE_TAG:-dev}
+    expose:
+      - "8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/healthz', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+
+  claim-service:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: claim-service
+    image: lost-found/claim-service:${IMAGE_TAG:-dev}
+    expose:
+      - "8002"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/healthz', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+
+  handover-service:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: handover-service
+    image: lost-found/handover-service:${IMAGE_TAG:-dev}
+    expose:
+      - "8003"
+    environment:
+      CLAIM_URL: http://claim-service:8002
+    depends_on:
+      claim-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/healthz', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+
+networks:
+  backend:
+    driver: bridge

@@ -60,6 +60,8 @@ class HandoverHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/healthz":
+            return self._send(200, {"status": "ok"})
         if parsed.path == "/slots":
             item_id = parse_qs(parsed.query).get("item_id", [""])[0]
             slots = HANDOVER_SLOTS.get(item_id)

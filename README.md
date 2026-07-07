@@ -666,4 +666,51 @@ git diff --check
 
 ## 33. 项目完成范围
 
-课程实验一至实验四均已实现。实验五的 Docker、Kubernetes 和 Java 集成按已确认范围不实施。
+课程实验一至实验四均已实现。本次新增 Docker Compose DevOps 运维自动化；Kubernetes 集群和 Java 集成仍不在当前实施范围内。
+
+## 34. DevOps：Windows 本机 Docker Compose 自动化
+
+本项目现在支持在一台 Windows 11 本机上通过 Docker Desktop + Docker Compose 部署四服务系统，并通过 GitHub Actions self-hosted runner 自动完成代码拉取、测试、构建、部署、烟测和回滚。
+
+设计与操作文档：
+
+- [DevOps 设计说明](docs/superpowers/specs/2026-07-06-devops-docker-compose-design.md)
+- [DevOps 实施计划](docs/superpowers/plans/2026-07-06-devops-docker-compose.md)
+- [Windows Docker Compose 运维手册](docs/devops-compose-windows.md)
+
+四服务拓扑：
+
+```text
+浏览器 -> http://localhost:8000 -> web-agent
+                                  -> item-service:8001
+                                  -> claim-service:8002
+                                  -> handover-service:8003
+```
+
+只有 `web-agent` 发布宿主机端口 `127.0.0.1:8000:8000`。三个业务服务只在 Compose 内部网络中通过 DNS 服务名访问。
+
+本地验证与启动：
+
+```powershell
+python -B -m unittest discover -s tests -v
+python -B -m compileall -q .
+docker compose -f compose.yaml config --quiet
+$env:IMAGE_TAG='dev'
+docker compose -p lost-found -f compose.yaml build
+docker compose -p lost-found -f compose.yaml up -d --wait --remove-orphans
+pwsh -NoProfile -File scripts/Test-Compose.ps1
+```
+
+GitHub Actions 流程：
+
+1. PR 和 main push 先在 GitHub-hosted Ubuntu runner 上运行单元测试、编译检查和 Compose 配置校验。
+2. Buildx 分别构建 `web-agent`、`item-service`、`claim-service`、`handover-service` 四个 Docker target，不推送镜像仓库。
+3. 仅 main push 会在 `[self-hosted, Windows, X64, compose-local]` runner 上执行 `scripts/Deploy-Compose.ps1`，使用 commit SHA 作为镜像 tag。
+
+回滚到本机已存在的 SHA-tagged 镜像：
+
+```powershell
+pwsh -NoProfile -File scripts/Rollback-Compose.ps1 -Sha <40-character-sha>
+```
+
+限制：当前演示系统仍使用进程内存保存认领单和交接预约。执行 `docker compose down` 或替换容器后，运行期业务状态会重置；如需生产级持久化，需要后续增加数据库和迁移流程。

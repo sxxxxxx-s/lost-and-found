@@ -513,3 +513,294 @@ OK
 - 输出中的手机号和完整学号自动脱敏。
 
 因此，本项目不是简单地“给微服务增加聊天界面”，而是将大模型 API、ReAct、RAG、会话记忆、BPMN、微服务、护栏和自动评测组合为一个可运行、可解释、可验证的面向服务系统。
+
+# 第4部分 服务监控与质量评价
+
+## 4.1 服务监控对象
+
+本系统采用微服务架构，服务监控对象既包括系统内部软件服务，也包括 Agent 使用的 API 服务接口。由于系统当前是课程原型，运行期数据主要保存在进程内存中，因此本次评价重点监控服务接口、容器运行状态、资源消耗、调用结果、响应时间和异常处理能力。
+
+| 服务 | 部署形态 | 主要接口 | 监控重点 |
+|---|---|---|---|
+| Web/Agent 服务 `web-agent` | Docker Compose 服务，对宿主机发布 `127.0.0.1:8000` | `GET /`、`GET /healthz`、`POST /api/chat` | 对外可用性、Agent 编排耗时、返回正确性、异常输入处理 |
+| 失物服务 `item-service` | Docker Compose 内部服务，端口 `8001` 仅内部暴露 | `GET /healthz`、`GET /items`、`GET /items/{item_id}`、`POST /items/{item_id}/match` | 公开查询、证据核验、404 控制、隐藏特征保护 |
+| 认领服务 `claim-service` | Docker Compose 内部服务，端口 `8002` 仅内部暴露 | `GET /healthz`、`POST /claims`、`GET /claims/{claim_id}`、`POST /approve`、`POST /manual-review`、`POST /request-evidence` | 认领单创建、状态变更、越权拒绝、重复认领处理 |
+| 交接服务 `handover-service` | Docker Compose 内部服务，端口 `8003` 仅内部暴露 | `GET /healthz`、`GET /slots`、`POST /appointments`、`GET /appointments/{claim_id}` | 时段查询、预约创建、未审核拒绝、重复预约处理 |
+| OpenAI 兼容大模型 API | 外部 API 或本地 MockLLM | `chat.completions.create()` 兼容接口 | 意图识别、RAG 问答、摘要和评测稳定性；离线模式下监控 MockLLM |
+| RAG 政策检索接口 | 本地模块/API 工具 | `search_policy`、`retrieve`、`retrieve_scored` | 政策召回率、复合问题覆盖率、检索耗时 |
+
+## 4.2 监控工具及应用方法
+
+本次监控采用“容器运行监控 + 接口烟测 + 自动化测试 + 离线评测 + 简单吞吐测试”的组合方式。该方式适合当前教学原型，能够覆盖资源参数、调用参数、时间参数和异常处理参数。
+
+### 4.2.1 容器与资源监控
+
+Docker Compose 用于部署四个服务。`compose.yaml` 中为每个服务设置了资源上限：
+
+```yaml
+cpus: 0.50
+mem_limit: 512m
+```
+
+启动服务后使用以下命令查看容器状态和资源消耗：
+
+```powershell
+$env:IMAGE_TAG = 'dev'
+docker compose -p lost-found -f compose.yaml up -d --build --wait
+docker compose -p lost-found -f compose.yaml ps
+docker stats --no-stream
+docker compose -p lost-found -f compose.yaml logs --tail 200
+```
+
+截图建议：
+
+- 图 4-1：`docker compose ps`，展示四个服务均为 `healthy`。
+- 图 4-2：`docker stats --no-stream`，展示 CPU、内存、网络 I/O 和块 I/O。
+- 图 4-3：Docker Desktop 容器列表或资源曲线界面。
+
+资源参数记录表如下：
+
+| 指标 | 获取方式 | 说明 |
+|---|---|---|
+| CPU 使用率 | `docker stats --no-stream` 的 `CPU %` | 判断服务是否存在异常高负载 |
+| 内存占用 | `docker stats --no-stream` 的 `MEM USAGE / LIMIT` | 对比 `512m` 容器限制，判断是否接近资源上限 |
+| 网络 I/O | `docker stats --no-stream` 的 `NET I/O` | 反映服务间调用和 Web 请求流量 |
+| 进程健康状态 | `docker compose ps`、容器 healthcheck | 判断服务是否持续存活 |
+| 日志错误 | `docker compose logs --tail 200` | 观察异常栈、HTTP 错误和重启情况 |
+
+### 4.2.2 健康检查与接口烟测
+
+四个服务均提供 `/healthz`。Compose 健康检查配置为每 10 秒检查一次，超时 3 秒，最多重试 6 次。对外服务 `web-agent` 的健康检查地址为：
+
+```text
+http://localhost:8000/healthz
+```
+
+项目已有烟测脚本：
+
+```powershell
+pwsh -NoProfile -File scripts/Test-Compose.ps1
+```
+
+该脚本会自动检查：
+
+1. 四个 Compose 服务都有运行中的容器。
+2. 四个容器健康状态均为 `healthy`。
+3. `item-service`、`claim-service`、`handover-service` 未暴露宿主机端口。
+4. `GET /healthz` 返回 `status=ok`。
+5. 首页包含“寻迹校园”。
+6. `POST /api/chat` 能返回候选失物 `LF2026001`。
+
+截图建议：
+
+- 图 4-4：`scripts/Test-Compose.ps1` 输出 `Compose smoke tests: PASS`。
+- 图 4-5：浏览器访问 `http://localhost:8000/healthz` 返回 `{"status":"ok"}`。
+
+### 4.2.3 调用参数和时间参数监控
+
+`/api/chat` 的响应中包含应用层 `latency` 字段，来源于 `app.py` 中的 `time.perf_counter()`，用于记录一次用户请求从进入护栏到完成 Agent/BPMN 编排的耗时。
+
+离线评测命令：
+
+```powershell
+python -X utf8 -B evaluate.py
+```
+
+结构化提取延迟：
+
+```powershell
+python -X utf8 -B -c "from evaluate import run_eval; rows, rate = run_eval(verbose=False); print('pass_rate', rate); print('avg_latency', round(sum(r['latency'] for r in rows)/len(rows), 3)); print('max_latency', max(r['latency'] for r in rows)); [print(r['name'], r['latency'], r['pass']) for r in rows]"
+```
+
+本次本地离线监控结果如下：
+
+| 场景 | latency/s | 是否通过 |
+|---|---:|---|
+| 寻物 | 0.054 | 是 |
+| 复合政策 | 0.000 | 是 |
+| 普通认领 | 0.106 | 是 |
+| 高价值认领 | 0.046 | 是 |
+| 证据不足 | 0.066 | 是 |
+| 提示注入 | 0.000 | 是 |
+| 越权 | 0.000 | 是 |
+| PII 脱敏 | 0.000 | 是 |
+| 平均值 | 0.034 | 8/8 |
+| 最大值 | 0.106 | 8/8 |
+
+普通认领场景耗时最高，原因是该请求会触发 BPMN 流程，并依次调用失物、认领和交接三个微服务；提示注入、越权和 PII 脱敏在护栏层短路处理，因此耗时接近 0。
+
+### 4.2.4 吞吐率测试
+
+吞吐率使用单位时间内成功完成的请求数量评价：
+
+```text
+吞吐率 TPS = 成功请求数 / 测试总耗时
+成功率 = 成功请求数 / 总请求数 × 100%
+错误率 = 失败请求数 / 总请求数 × 100%
+```
+
+对 `web-agent` 可使用 PowerShell 连续调用 `/api/chat`：
+
+```powershell
+$N = 50
+$Ok = 0
+$Body = @{ user_id = "u001"; message = "帮我找图书馆发现的黑色耳机" } | ConvertTo-Json -Compress
+$Sw = [Diagnostics.Stopwatch]::StartNew()
+1..$N | ForEach-Object {
+    try {
+        $R = Invoke-RestMethod -Uri "http://localhost:8000/api/chat" `
+            -Method Post `
+            -Body $Body `
+            -ContentType "application/json; charset=utf-8" `
+            -TimeoutSec 10
+        if ($R.reply -like "*LF2026001*") { $Ok++ }
+    } catch {
+    }
+}
+$Sw.Stop()
+[pscustomobject]@{
+    Total = $N
+    Success = $Ok
+    Seconds = [math]::Round($Sw.Elapsed.TotalSeconds, 3)
+    TPS = [math]::Round($Ok / $Sw.Elapsed.TotalSeconds, 2)
+    SuccessRate = [math]::Round($Ok / $N * 100, 2)
+}
+```
+
+对三个内部微服务，可在本机开发模式下分别启动服务并使用 `curl.exe` 或单元测试测量接口；在 Compose 模式下，业务服务不暴露宿主机端口，可通过 `web-agent` 间接触发，或进入容器内部访问内部 DNS 名称。
+
+示例：
+
+```powershell
+curl.exe -w "time_total=%{time_total}`n" "http://localhost:8001/items?keyword=耳机&location=图书馆"
+curl.exe -w "time_total=%{time_total}`n" "http://localhost:8002/healthz"
+curl.exe -w "time_total=%{time_total}`n" "http://localhost:8003/slots?item_id=LF2026001"
+```
+
+截图建议：
+
+- 图 4-6：PowerShell 吞吐率脚本输出。
+- 图 4-7：`curl.exe -w` 输出单接口响应时间。
+- 图 4-8：Web 页面一次 `/api/chat` 响应中展示的 latency。
+
+## 4.3 服务质量评价方法
+
+本报告参考 SLA 评价思路，将服务质量分为效率、可用性、健壮性和吞吐率四类指标。评价对象包括每个微服务和外部/API 服务接口。
+
+| 质量指标 | 计算方法 | 数据来源 | 评价含义 |
+|---|---|---|---|
+| 效率 | 平均响应时间、最大响应时间、P95 响应时间 | `/api/chat` latency、`curl.exe -w`、PowerShell 计时 | 判断服务处理请求是否及时 |
+| 可用性 | `可用性 = 成功健康检查次数 / 总健康检查次数 × 100%` | `/healthz`、`docker compose ps`、`Test-Compose.ps1` | 判断服务是否可访问、是否处于 healthy 状态 |
+| 健壮性 | `健壮性 = 异常场景通过数 / 异常场景总数 × 100%` | 单元测试、评测集、错误请求测试 | 判断服务对非法输入、越权、重复请求和依赖异常的处理能力 |
+| 吞吐率 | `TPS = 成功请求数 / 测试总耗时` | PowerShell 连续调用脚本、接口压测 | 判断服务单位时间处理能力 |
+| 正确性 | `正确率 = 评测通过数 / 评测总数 × 100%` | `evaluate.py`、LLM-as-judge | 判断 Agent 回复和流程结果是否覆盖关键要点 |
+| 资源稳定性 | CPU、内存是否低于资源上限 | `docker stats` | 判断服务是否在资源限制内稳定运行 |
+
+结合课程原型特点，本项目采用以下评价等级：
+
+| 等级 | 判定标准 |
+|---|---|
+| 优 | 健康检查通过率 100%，核心评测通过率 ≥ 95%，异常测试全部通过，平均响应时间低于 1 秒，资源使用未接近上限 |
+| 良 | 健康检查通过率 ≥ 99%，核心评测通过率 ≥ 90%，主要异常测试通过，平均响应时间低于 3 秒 |
+| 中 | 健康检查通过率 ≥ 95%，核心评测通过率 ≥ 80%，存在少量可恢复异常 |
+| 差 | 健康检查、核心评测或异常处理存在明显失败，影响基本使用 |
+
+如果接入真实大模型 API，响应时间会受到外部模型和网络影响，应单独记录 LLM API 的请求耗时、失败率和超时次数，不应与离线 MockLLM 结果混为同一组指标。
+
+## 4.4 本次监控与测试结果
+
+在 Windows 本地环境中顺序运行自动化测试和离线评测，得到以下结果：
+
+| 监控/测试项目 | 命令 | 结果 |
+|---|---|---|
+| 自动化测试 | `python -B -m unittest discover -s tests -v` | 71 项测试全部通过，用时 18.308 秒 |
+| Python 编译检查 | `python -B -m compileall -q .` | 退出码 0 |
+| 离线业务评测 | `python -X utf8 -B evaluate.py` | 8/8 通过，通过率 100% |
+| 应用层平均延迟 | `run_eval(verbose=False)` | 0.034 秒 |
+| 应用层最大延迟 | `run_eval(verbose=False)` | 0.106 秒 |
+| Compose 健康检查配置 | `compose.yaml` | 四个服务均配置 `/healthz`，间隔 10 秒、超时 3 秒、重试 6 次 |
+| 容器资源限制 | `compose.yaml` | 每个服务限制 `0.50 CPU`、`512m` 内存 |
+
+自动化测试覆盖了 200、400、403、404、409 等响应路径，包含提示注入拦截、越权拦截、PII 脱敏、服务不可用降级、BPMN 三条分支路径和三个微服务的 HTTP 契约。因此，测试结果可以作为健壮性和接口正确性的主要证据。
+
+## 4.5 分服务质量评价
+
+### 4.5.1 Web/Agent 服务
+
+| 指标 | 监控或测试结果 | 评价 |
+|---|---|---|
+| 效率 | 离线评测平均 latency 为 0.034 秒，最大 latency 为 0.106 秒 | 离线 MockLLM 模式下效率高；普通认领链路最长但仍低于 1 秒 |
+| 可用性 | `/healthz` 返回 `status=ok`，Compose healthcheck 可持续检查 | 具备基础健康检查能力 |
+| 健壮性 | 空消息、非法 JSON、未知 API 返回受控错误；提示注入和越权请求被拦截 | 健壮性较好，异常不会导致服务崩溃 |
+| 吞吐率 | 可通过 PowerShell 连续调用 `/api/chat` 计算 TPS | 适合轻量并发演示；真实并发能力受 Python 标准库 HTTP 服务和 LLM 后端限制 |
+| 正确性 | 8 个评测场景全部通过 | Agent 路由、RAG、BPMN 和护栏输出正确 |
+
+综合评价：Web/Agent 服务达到“优”。在离线教学模式下响应速度快、正确率高、异常输入有明确拦截。若接入真实大模型，应继续监控外部 API 延迟和超时率。
+
+### 4.5.2 失物服务
+
+| 指标 | 监控或测试结果 | 评价 |
+|---|---|---|
+| 效率 | 查询接口为内存数据检索，响应时间可用 `curl.exe -w time_total` 测量 | 结构简单，预期延迟低 |
+| 可用性 | 提供 `GET /healthz`，Compose 内部健康检查覆盖 | 具备可用性监控点 |
+| 健壮性 | 测试覆盖公开详情、未知失物 404、搜索过滤、证据评分 | 能处理正常查询和不存在资源 |
+| 安全性 | 公开接口不返回 `secret_features` 或 `secret_keywords` | 隐私保护符合业务要求 |
+| 吞吐率 | 可对 `GET /items` 连续调用测量 TPS | 读接口适合较高吞吐；写入或持久化不是当前范围 |
+
+综合评价：失物服务达到“优”。其核心风险不是性能，而是隐藏特征泄漏；当前测试已验证公开接口不会泄漏隐藏字段。
+
+### 4.5.3 认领服务
+
+| 指标 | 监控或测试结果 | 评价 |
+|---|---|---|
+| 效率 | 认领单创建和状态更新使用内存字典，接口处理轻量 | 在原型规模下效率较高 |
+| 可用性 | 提供 `GET /healthz`，被 `handover-service` 依赖 | 是交接服务的关键依赖 |
+| 健壮性 | 测试覆盖创建、查询、授权、重复认领 409、状态接口非法输入 | 异常路径覆盖充分 |
+| 安全性 | 查询认领单时校验 `user_id`，越权返回 403 | 权限控制有效 |
+| 吞吐率 | 可通过重复创建不同用户/物品认领单或查询已有认领单测量 | 状态写入接口需注意测试数据隔离 |
+
+综合评价：认领服务达到“优”。它承担认领状态机和授权校验，当前 403、404、409 等错误路径均有测试保障。
+
+### 4.5.4 交接服务
+
+| 指标 | 监控或测试结果 | 评价 |
+|---|---|---|
+| 效率 | 交接时段查询为内存读取，预约创建会调用认领服务校验状态 | 查询效率高，创建预约受认领服务可用性影响 |
+| 可用性 | 提供 `GET /healthz`，Compose 中依赖 `claim-service` healthy 后启动 | 具备依赖顺序控制 |
+| 健壮性 | 测试覆盖可用时段、重复预约、未知时段、未审批认领单、缺失预约 | 异常处理较完整 |
+| 安全性 | 创建预约前检查认领单归属和审核状态 | 能防止未通过认领直接预约 |
+| 吞吐率 | 可对 `GET /slots` 连续调用测量 TPS，对 `POST /appointments` 使用不同 claim 数据测量 | 读接口吞吐较高，写接口受业务约束 |
+
+综合评价：交接服务达到“良到优”。其质量依赖认领服务，因此需要在部署监控中同时关注两个服务的健康状态和调用错误。
+
+### 4.5.5 OpenAI 兼容大模型 API 与 RAG 接口
+
+| 指标 | 监控或测试结果 | 评价 |
+|---|---|---|
+| 效率 | 本次使用 MockLLM，平均应用层延迟 0.034 秒 | 离线模式效率高；真实模型需单独监控网络耗时 |
+| 可用性 | 未配置 API Key 时自动回退 MockLLM | 能保证教学演示不中断 |
+| 健壮性 | Judge 解析失败时返回不通过，不会中断评测流程 | 评测流程可控 |
+| 正确性 | `POLICY_K=2` 时 8/8 评测通过，复合政策问题可同时覆盖人工复核和 3 日交接 | RAG 参数设置有效 |
+| 风险 | 外部模型服务可能出现限流、超时或响应格式变化 | 生产环境需增加外部 API 超时率和重试监控 |
+
+综合评价：离线模式下该接口达到“优”。真实 API 模式下需要把外部模型可用性、平均响应时间和失败率纳入 SLA。
+
+## 4.6 总体评价与改进建议
+
+从本次监控和测试结果看，系统在教学原型范围内服务质量较好：
+
+1. **效率**：离线评测平均响应时间为 0.034 秒，最大响应时间为 0.106 秒。BPMN 串联三项微服务的普通认领链路耗时最高，但仍处于较低水平。
+2. **可用性**：四个服务均设计了 `/healthz`，Compose 会按健康状态控制依赖启动，`Test-Compose.ps1` 能对部署结果进行端到端烟测。
+3. **健壮性**：71 项自动化测试全部通过，覆盖非法 JSON、空消息、404、403、409、越权、提示注入、服务不可用和 BPMN 异常分支。
+4. **吞吐率**：当前系统适合课程演示和轻量并发访问。由于使用 Python 标准库 HTTP 服务、进程内存数据和可选外部 LLM，生产吞吐能力还需要在真实部署环境中通过持续压测确定。
+5. **资源控制**：Compose 为每个容器设置了 CPU 和内存上限，并通过只读文件系统、内部网络和最小宿主机端口暴露降低运行风险。
+
+需要改进的方面：
+
+- 增加 Prometheus 或 OpenTelemetry 指标导出，持续记录请求数、错误数、P95/P99 延迟和依赖调用耗时。
+- 将运行期业务数据迁移到数据库，避免容器重启后认领单和预约数据丢失。
+- 对真实 OpenAI 兼容 API 增加超时、重试、熔断和配额监控。
+- 在 GitHub Actions 部署后保存 smoke test、`docker stats` 和评测结果，形成可追溯的服务质量记录。
+- 增加并发压测场景，区分读接口、写接口和完整 Agent/BPMN 链路的吞吐能力。
+
+综上，本系统已经具备基本 SLA 监控和评价条件：通过健康检查评价可用性，通过接口和异常测试评价健壮性，通过 latency 和压测评价效率与吞吐率，通过 Docker 资源监控评价资源稳定性。当前本地离线结果表明系统核心质量指标达到课程原型的“优”等级；若用于真实校园场景，还需要补充持续监控、持久化存储和真实外部 API 的 SLA 跟踪。

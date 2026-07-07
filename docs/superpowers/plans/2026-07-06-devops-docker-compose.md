@@ -38,7 +38,7 @@
 - Modify: `tests/test_services.py`
 - Modify: `tests/test_experiment4.py`
 
-- [ ] **Step 1: Write failing business-service health tests**
+- [x] **Step 1: Write failing business-service health tests**
 
 Append this test class to `tests/test_services.py`:
 
@@ -53,7 +53,7 @@ class HealthEndpointTests(unittest.TestCase):
                 self.assertEqual(payload, {"status": "ok"})
 ```
 
-- [ ] **Step 2: Write the failing Web-only runtime test**
+- [x] **Step 2: Write the failing Web-only runtime test**
 
 In `tests/test_experiment4.py`, import `SESSIONS` and `WebHandler` from `web_server`, keep `start_business_services` and `stop_servers` imported from `server`, change `@patch("server.serve_struct")` to `@patch("web_server.serve_struct")`, and add:
 
@@ -68,7 +68,7 @@ class WebRuntimeTests(unittest.TestCase):
         self.assertEqual(payload, {"status": "ok"})
 ```
 
-- [ ] **Step 3: Run focused tests and verify RED**
+- [x] **Step 3: Run focused tests and verify RED**
 
 ```powershell
 python -B -m unittest tests.test_services.HealthEndpointTests tests.test_experiment4.WebRuntimeTests -v
@@ -76,7 +76,7 @@ python -B -m unittest tests.test_services.HealthEndpointTests tests.test_experim
 
 Expected: import failure because `web_server.py` does not exist; after adding the import temporarily, business `/healthz` requests return 404.
 
-- [ ] **Step 4: Create `web_server.py`**
+- [x] **Step 4: Create `web_server.py`**
 
 Move `SESSIONS`, `WEB_DIR`, and the complete `WebHandler` implementation from `server.py` into `web_server.py`. Keep the current POST contract unchanged and implement these GET/startup functions:
 
@@ -109,7 +109,7 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 5: Preserve the all-in-one development entry point**
+- [x] **Step 5: Preserve the all-in-one development entry point**
 
 Remove the Web handler implementation from `server.py`. Import `WebHandler` and `create_web_server` from `web_server`, re-export `WebHandler` for compatibility, and change `main()` to:
 
@@ -125,7 +125,7 @@ def main():
         stop_servers(services)
 ```
 
-- [ ] **Step 6: Add local health branches to business services**
+- [x] **Step 6: Add local health branches to business services**
 
 At the beginning of each handler's `do_GET`, immediately after `parsed = urlparse(self.path)`, add:
 
@@ -136,7 +136,7 @@ if parsed.path == "/healthz":
 
 Do not call another service or read `ITEMS`, `CLAIMS`, `APPOINTMENTS`, or slots from this branch.
 
-- [ ] **Step 7: Run focused and full regression tests**
+- [x] **Step 7: Run focused and full regression tests**
 
 ```powershell
 python -B -m unittest tests.test_services.HealthEndpointTests tests.test_experiment4.WebRuntimeTests tests.test_experiment4.ServerTests -v
@@ -160,7 +160,7 @@ git commit -m "feat: separate web process and add health checks"
 - Create: `.dockerignore`
 - Create: `tests/test_devops_assets.py`
 
-- [ ] **Step 1: Write failing Docker asset tests**
+- [x] **Step 1: Write failing Docker asset tests**
 
 Create `tests/test_devops_assets.py` with:
 
@@ -194,7 +194,7 @@ class DockerAssetTests(unittest.TestCase):
             self.assertIn(marker, text)
 ```
 
-- [ ] **Step 2: Run Docker asset tests and verify RED**
+- [x] **Step 2: Run Docker asset tests and verify RED**
 
 ```powershell
 python -B -m unittest tests.test_devops_assets.DockerAssetTests -v
@@ -202,7 +202,7 @@ python -B -m unittest tests.test_devops_assets.DockerAssetTests -v
 
 Expected: failure because `Dockerfile` and `.dockerignore` do not exist.
 
-- [ ] **Step 3: Implement the shared base stage**
+- [x] **Step 3: Implement the shared base stage**
 
 Start `Dockerfile` with:
 
@@ -219,7 +219,7 @@ COPY requirements.txt ./requirements.txt
 RUN python -m pip install --upgrade pip && python -m pip install -r requirements.txt
 ```
 
-- [ ] **Step 4: Implement all four final stages**
+- [x] **Step 4: Implement all four final stages**
 
 The Web stage copies root Python modules and runtime assets:
 
@@ -262,7 +262,7 @@ HEALTHCHECK --interval=15s --timeout=3s --start-period=5s --retries=3 CMD ["pyth
 CMD ["python", "-B", "services/handover_service.py"]
 ```
 
-- [ ] **Step 5: Create `.dockerignore`**
+- [x] **Step 5: Create `.dockerignore`**
 
 Use exactly:
 
@@ -320,7 +320,7 @@ git commit -m "feat: add multi-stage container builds"
 - Create: `compose.yaml`
 - Modify: `tests/test_devops_assets.py`
 
-- [ ] **Step 1: Add failing Compose contracts**
+- [x] **Step 1: Add failing Compose contracts**
 
 Append:
 
@@ -357,7 +357,7 @@ class ComposeAssetTests(unittest.TestCase):
             self.assertIn(marker, self.text)
 ```
 
-- [ ] **Step 2: Run Compose tests and verify RED**
+- [x] **Step 2: Run Compose tests and verify RED**
 
 ```powershell
 python -B -m unittest tests.test_devops_assets.ComposeAssetTests -v
@@ -365,7 +365,7 @@ python -B -m unittest tests.test_devops_assets.ComposeAssetTests -v
 
 Expected: failure because `compose.yaml` does not exist.
 
-- [ ] **Step 3: Create the shared Compose service policy**
+- [x] **Step 3: Create the shared Compose service policy**
 
 Start `compose.yaml` with:
 
@@ -387,7 +387,7 @@ x-service-defaults: &service-defaults
   mem_limit: 512m
 ```
 
-- [ ] **Step 4: Define `web-agent`**
+- [x] **Step 4: Define `web-agent`**
 
 ```yaml
 services:
@@ -423,7 +423,7 @@ services:
       start_period: 5s
 ```
 
-- [ ] **Step 5: Define the three business services**
+- [x] **Step 5: Define the three business services**
 
 ```yaml
   item-service:
@@ -484,7 +484,7 @@ networks:
     driver: bridge
 ```
 
-- [ ] **Step 6: Validate the Compose model**
+- [x] **Step 6: Validate the Compose model**
 
 ```powershell
 python -B -m unittest tests.test_devops_assets.ComposeAssetTests -v
@@ -520,11 +520,11 @@ git commit -m "feat: add four-service Compose stack"
 - Create: `scripts/Rollback-Compose.ps1`
 - Modify: `tests/test_devops_assets.py`
 
-- [ ] **Step 1: Add failing PowerShell asset contracts**
+- [x] **Step 1: Add failing PowerShell asset contracts**
 
 Append a `PowerShellAssetTests` class that loads all three scripts and asserts each uses `Set-StrictMode -Version Latest` and `$ErrorActionPreference = "Stop"`. Assert `Test-Compose.ps1` references four services, `localhost:8000/healthz`, `/api/chat`, and `docker port`; assert `Deploy-Compose.ps1` references `docker info`, `docker compose version`, `build`, `up`, `--wait`, `--remove-orphans`, `logs`, the smoke script, and old-tag rollback; assert `Rollback-Compose.ps1` validates a 40-character hexadecimal SHA and uses `--no-build --wait`.
 
-- [ ] **Step 2: Run script contracts and verify RED**
+- [x] **Step 2: Run script contracts and verify RED**
 
 ```powershell
 python -B -m unittest tests.test_devops_assets.PowerShellAssetTests -v
@@ -532,7 +532,7 @@ python -B -m unittest tests.test_devops_assets.PowerShellAssetTests -v
 
 Expected: failure because `scripts/` does not exist.
 
-- [ ] **Step 3: Implement `Test-Compose.ps1`**
+- [x] **Step 3: Implement `Test-Compose.ps1`**
 
 The script parameters are `ProjectName = "lost-found"`, `ComposeFile = "compose.yaml"`, and `BaseUrl = "http://localhost:8000"`. It must:
 
@@ -549,7 +549,7 @@ The script parameters are `ProjectName = "lost-found"`, `ComposeFile = "compose.
 
 Use `Invoke-RestMethod`, `ConvertTo-Json -Compress`, and a 10-second timeout. End with `Compose smoke tests: PASS`.
 
-- [ ] **Step 4: Implement deployment preflight and old-tag detection**
+- [x] **Step 4: Implement deployment preflight and old-tag detection**
 
 `Deploy-Compose.ps1` accepts mandatory `Sha` with `[ValidatePattern('^[0-9a-f]{40}$')]`, plus the same project/file defaults. It checks that `docker`, `docker compose`, and Docker daemon are available; requires `docker info --format '{{.OSType}}'` to equal `linux`; and runs `docker compose config --quiet` without printing expanded configuration.
 
@@ -566,7 +566,7 @@ $Images = [ordered]@{
 
 For each running service, inspect `.Config.Image`, require the matching image prefix, and collect its tag. If zero containers exist, treat this as first deployment. If one to three exist, distinct tags are found, or the common tag is not 40 lowercase hexadecimal characters, stop before building and print `Existing Compose deployment is partial, mutable, or uses mixed tags`.
 
-- [ ] **Step 5: Implement build, deploy, diagnostics, and rollback**
+- [x] **Step 5: Implement build, deploy, diagnostics, and rollback**
 
 Within `try`, set `$env:IMAGE_TAG = $Sha`, then invoke checked native commands for:
 
@@ -589,7 +589,7 @@ throw $OriginalError
 
 A checked native-command helper must examine `$LASTEXITCODE` after every Docker command and throw a message containing the command name and exit code.
 
-- [ ] **Step 6: Implement `Rollback-Compose.ps1`**
+- [x] **Step 6: Implement `Rollback-Compose.ps1`**
 
 Accept mandatory `Sha` with the same validation and defaults. For every image in the ordered mapping, run `docker image inspect "$ImageName`:$Sha"`; if any image is absent, fail before changing containers. Set `$env:IMAGE_TAG`, run:
 
@@ -633,11 +633,11 @@ git commit -m "feat: automate Compose deployment and rollback"
 - Create: `.github/workflows/ci-cd.yml`
 - Modify: `tests/test_devops_assets.py`
 
-- [ ] **Step 1: Add a failing workflow safety contract**
+- [x] **Step 1: Add a failing workflow safety contract**
 
 Append `WorkflowAssetTests` asserting `.github/workflows/ci-cd.yml` triggers on pull requests and `main`, defaults to `contents: read`, runs unittest/compileall/Compose validation, builds a four-target matrix without pushing, and has a deploy job with `[self-hosted, Windows, X64, compose-local]`, `environment: compose-local`, `shell: pwsh`, concurrency, and `Deploy-Compose.ps1`. Assert the deploy condition requires both a push event and `refs/heads/main`.
 
-- [ ] **Step 2: Run the workflow test and verify RED**
+- [x] **Step 2: Run the workflow test and verify RED**
 
 ```powershell
 python -B -m unittest tests.test_devops_assets.WorkflowAssetTests -v
@@ -645,7 +645,7 @@ python -B -m unittest tests.test_devops_assets.WorkflowAssetTests -v
 
 Expected: failure because `.github/workflows/ci-cd.yml` does not exist.
 
-- [ ] **Step 3: Create the test and target-build jobs**
+- [x] **Step 3: Create the test and target-build jobs**
 
 Create workflow `CI CD` with pull request and `main` push triggers, top-level `permissions: {contents: read}`, and a `test` job on `ubuntu-latest`. Use `actions/checkout@v4` and `actions/setup-python@v5` with Python 3.12, install requirements, run unittest discovery and compileall, then run `IMAGE_TAG=ci docker compose -f compose.yaml config --quiet`.
 
@@ -662,7 +662,7 @@ matrix:
 
 Use `actions/checkout@v4`, `docker/setup-buildx-action@v3`, and `docker/build-push-action@v6` with `context: .`, `file: Dockerfile`, `target: ${{ matrix.target }}`, `push: false`, `cache-from: type=gha`, and `cache-to: type=gha,mode=max`. No workflow job logs into a registry.
 
-- [ ] **Step 4: Create the trusted Windows deploy job**
+- [x] **Step 4: Create the trusted Windows deploy job**
 
 The deploy job needs both prior jobs and uses:
 
@@ -686,7 +686,7 @@ After `actions/checkout@v4`, run:
 
 Set only this step's `OPENAI_API_KEY` environment value to `${{ secrets.OPENAI_API_KEY }}`. Do not target the self-hosted runner from PR jobs.
 
-- [ ] **Step 5: Run workflow and full static contracts**
+- [x] **Step 5: Run workflow and full static contracts**
 
 ```powershell
 python -B -m unittest tests.test_devops_assets -v
@@ -712,7 +712,7 @@ git commit -m "feat: add Compose CI CD workflow"
 - Modify: `README.md`
 - Modify: `docs/superpowers/plans/2026-07-06-devops-docker-compose.md`
 
-- [ ] **Step 1: Update example configuration and ignores**
+- [x] **Step 1: Update example configuration and ignores**
 
 Keep `.env` ignored. Add `IMAGE_TAG=dev` to `.env.example` and explain that Compose replaces the localhost service URLs internally. Add these `.gitignore` entries:
 
@@ -722,7 +722,7 @@ actions-runner/
 *.secret.env
 ```
 
-- [ ] **Step 2: Write the Windows runbook**
+- [x] **Step 2: Write the Windows runbook**
 
 `docs/devops-compose-windows.md` must document:
 
@@ -737,11 +737,11 @@ actions-runner/
 9. Find available local tags with `docker image ls lost-found/*` and invoke `Rollback-Compose.ps1` with an existing 40-character SHA.
 10. Remove old images only through an explicit operator command after confirming they are not the current or previous tag.
 
-- [ ] **Step 3: Update README**
+- [x] **Step 3: Update README**
 
 Add a DevOps section linking the design, implementation plan, and Windows runbook. Show the four-service topology, `http://localhost:8000`, local Compose commands, GitHub Actions stages, rollback command, and the in-memory data limitation. Replace the statement that Docker is out of scope only after implementation and verification succeed.
 
-- [ ] **Step 4: Run complete automated verification**
+- [x] **Step 4: Run complete automated verification**
 
 ```powershell
 python -B -m unittest discover -s tests -v

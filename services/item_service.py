@@ -95,6 +95,8 @@ class ItemHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/healthz":
+            return self._send(200, {"status": "ok"})
         if parsed.path == "/items":
             query = parse_qs(parsed.query)
             items = search_items(

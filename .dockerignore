@@ -1,0 +1,13 @@
+.git
+.github
+.agents
+.codex
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.pytest_cache/
+tests/
+docs/
+report.md

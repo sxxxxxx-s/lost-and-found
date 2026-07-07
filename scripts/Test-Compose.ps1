@@ -28,10 +28,15 @@ function Invoke-NativeOutput {
 function Get-ServiceContainerId {
     param([Parameter(Mandatory = $true)][string]$Service)
 
-    $ContainerId = Invoke-NativeOutput "docker compose ps $Service" {
+    $ContainerIdRaw = Invoke-NativeOutput "docker compose ps $Service" {
         docker compose -p $ProjectName -f $ComposeFile ps -q $Service
     }
-    $ContainerId = ($ContainerId | Select-Object -First 1).Trim()
+    $ContainerIdLine = $ContainerIdRaw | Select-Object -First 1
+    $ContainerId = if ($null -eq $ContainerIdLine) {
+        ""
+    } else {
+        ([string]$ContainerIdLine).Trim()
+    }
     if ([string]::IsNullOrWhiteSpace($ContainerId)) {
         throw "Compose service has no running container: $Service"
     }

@@ -174,6 +174,24 @@ class ApplicationTests(unittest.TestCase):
         self.assertIn("认领单CL0001当前状态:已通过", result["reply"])
         self.assertIn("query_claim", result["trace"])
 
+    def test_colloquial_claim_status_query_reaches_claim_tool(self):
+        CLAIMS["CL0001"] = {
+            "claim_id": "CL0001",
+            "item_id": "LF2026001",
+            "user_id": "u001",
+            "match_score": 100,
+            "status": "已通过",
+        }
+        servers = start_business_services((0, 0, 0))
+        try:
+            result = serve_struct("u001", "想查 CL0001 现在处理到哪了")
+        finally:
+            stop_servers(servers)
+
+        self.assertEqual(result["intent"], "认领")
+        self.assertIn("认领单CL0001当前状态:已通过", result["reply"])
+        self.assertIn("query_claim", result["trace"])
+
 
 class WebRuntimeTests(unittest.TestCase):
     def test_web_health_does_not_require_business_services(self):
@@ -260,6 +278,9 @@ class FrontendTests(unittest.TestCase):
             "LF2026003",
             "注入测试",
             "越权测试",
+            "可以直接输入",
+            "例如：我昨天在图书馆二楼丢了黑色蓝牙耳机",
+            "示例问题",
             "fetch('/api/chat'",
             "textContent",
         ):

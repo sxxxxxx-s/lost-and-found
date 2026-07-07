@@ -144,7 +144,10 @@ def expert_policy(text, context=None, verbose=False, user_id="u001"):
     policies = retrieve(text)
     if not policies:
         return "【规则专家·RAG】未检索到相关规则。"
-    return "【规则专家·RAG】" + "；".join(policies)
+    cleaned_policies = [
+        str(policy).rstrip("。.!！?？") for policy in policies
+    ]
+    return "【规则专家·RAG】" + "；".join(cleaned_policies) + "。"
 
 
 EXPERTS = {

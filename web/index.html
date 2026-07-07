@@ -51,6 +51,9 @@
     padding: 10px 14px; border-top: 1px solid #eef0f3;
     display: flex; flex-wrap: wrap; gap: 7px;
   }
+  .quick-title {
+    align-self: center; font-size: 12px; color: #5a6b82; margin-right: 2px;
+  }
   .quick button {
     font-size: 12px; border: 1px solid #cdd7e3; background: #f7f9fc;
     color: #33425a; padding: 5px 10px; border-radius: 14px; cursor: pointer;
@@ -105,7 +108,8 @@
       </label>
     </div>
     <div id="msgs" aria-live="polite"></div>
-    <div class="quick">
+    <div class="quick" aria-label="示例问题">
+      <span class="quick-title">示例问题</span>
       <button onclick="ask('帮我找图书馆发现的黑色耳机')">寻物查询</button>
       <button onclick="ask('我要认领 LF2026001，蓝牙耳机在图书馆遗失，日期2026-06-28，盒内刻有ZL')">普通认领</button>
       <button onclick="ask('我要认领 LF2026002，笔记本电脑在教学楼遗失，日期2026-06-27，序列号后四位A7C9')">高价值认领</button>
@@ -115,7 +119,7 @@
       <button onclick="ask('查询认领单 CL0001')">越权测试</button>
     </div>
     <div class="inbar">
-      <input id="inp" aria-label="消息" placeholder="输入问题，回车发送…">
+      <input id="inp" aria-label="消息" placeholder="例如：我昨天在图书馆二楼丢了黑色蓝牙耳机">
       <button id="btn" onclick="send()">发送</button>
     </div>
   </section>
@@ -198,7 +202,7 @@ inputEl.addEventListener('keydown', event => {
 userEl.addEventListener('change', () => {
   document.getElementById('metaUser').textContent = userEl.value;
 });
-addMsg('你好！我可以帮你搜索失物、提交认领、查询交接和解释认领规则。', 'bot', '助理');
+addMsg('你好！你可以直接输入遗失物描述、失物编号、认领单编号或规则问题，我会帮你搜索失物、提交认领、查询交接和解释认领规则。', 'bot', '助理');
 </script>
 </body>
 </html>

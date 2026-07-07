@@ -2,7 +2,7 @@ import contextlib
 import io
 import unittest
 
-from agent import detect_intent, react_agent
+from agent import detect_intent, orchestrate, react_agent
 from data import APPOINTMENTS, CLAIMS
 from services.claim_service import ClaimHandler
 import services.handover_service as handover_service
@@ -101,6 +101,32 @@ class IntentTests(unittest.TestCase):
         self.assertEqual(result["intent"], "交接")
         self.assertEqual(result["entities"]["item_id"], "LF2026001")
 
+    def test_detects_colloquial_lost_item_request(self):
+        result = detect_intent("我在图书馆遗落了一个黑色蓝牙耳机")
+
+        self.assertEqual(result["intent"], "寻物")
+        self.assertEqual(result["entities"]["location"], "图书馆")
+        self.assertEqual(result["entities"]["category"], "耳机")
+        self.assertEqual(result["entities"]["color"], "黑色")
+
+    def test_detects_colloquial_claim_status_query(self):
+        result = detect_intent("想查 CL0001 现在处理到哪了")
+
+        self.assertEqual(result["intent"], "认领")
+        self.assertEqual(result["entities"]["claim_id"], "CL0001")
+
+    def test_detects_colloquial_handover_request(self):
+        result = detect_intent("LF2026001 可以什么时候去取")
+
+        self.assertEqual(result["intent"], "交接")
+        self.assertEqual(result["entities"]["item_id"], "LF2026001")
+
+    def test_detects_colloquial_policy_question(self):
+        result = detect_intent("电脑这种贵重物品为啥要人工审核")
+
+        self.assertEqual(result["intent"], "规则咨询")
+        self.assertEqual(result["entities"]["category"], "笔记本电脑")
+
 
 class ReactAgentTests(unittest.TestCase):
     def test_react_queries_item_then_handover_slots(self):
@@ -122,6 +148,44 @@ class ReactAgentTests(unittest.TestCase):
         self.assertLess(output.index("query_item"), output.index("list_handover_slots"))
         self.assertIn("LF2026001", answer)
         self.assertIn("图书馆服务台", answer)
+
+    def test_react_searches_colloquial_lost_item(self):
+        with running_server(ItemHandler) as item_base:
+            tools.ITEM_URL = item_base
+            trace = io.StringIO()
+            with contextlib.redirect_stdout(trace):
+                answer = react_agent(
+                    "我在图书馆遗落了一个黑色蓝牙耳机",
+                    verbose=True,
+                )
+
+        output = trace.getvalue()
+        self.assertIn("search_items", output)
+        self.assertIn("LF2026001", answer)
+
+    def test_react_lists_slots_for_colloquial_pickup_request(self):
+        with running_server(ItemHandler) as item_base, running_server(
+            HandoverHandler
+        ) as handover_base:
+            tools.ITEM_URL = item_base
+            tools.HANDOVER_URL = handover_base
+            trace = io.StringIO()
+            with contextlib.redirect_stdout(trace):
+                answer = react_agent(
+                    "LF2026001 可以什么时候去取",
+                    verbose=True,
+                )
+
+        output = trace.getvalue()
+        self.assertIn("query_item", output)
+        self.assertIn("list_handover_slots", output)
+        self.assertIn("图书馆服务台", answer)
+
+    def test_orchestrate_answers_colloquial_policy_question(self):
+        result = orchestrate("电脑这种贵重物品为啥要人工审核", verbose=False)
+
+        self.assertEqual(result["intent"], "规则咨询")
+        self.assertIn("人工复核", result["answer"])
 
 
 if __name__ == "__main__":

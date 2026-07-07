@@ -71,6 +71,97 @@ def _norm(messages):
     return out
 
 
+_LOCATIONS = ("图书馆", "教学楼", "食堂", "操场", "宿舍")
+_COLORS = ("黑色", "银色", "蓝色", "白色", "红色")
+_CATEGORY_ALIASES = (
+    ("airpods", "耳机"),
+    ("蓝牙耳机", "耳机"),
+    ("耳麦", "耳机"),
+    ("耳机", "耳机"),
+    ("笔记本电脑", "笔记本电脑"),
+    ("笔记本", "笔记本电脑"),
+    ("电脑", "笔记本电脑"),
+    ("校园卡", "校园卡"),
+    ("饭卡", "校园卡"),
+    ("手机", "手机"),
+    ("钥匙", "钥匙"),
+)
+
+
+def _contains(text, pattern):
+    return bool(re.search(pattern, text, re.I))
+
+
+def _parse_user_text(text):
+    raw = str(text or "")
+    lowered = raw.lower()
+    item_ids = re.findall(r"LF\d+", raw, re.I)
+    claim_ids = re.findall(r"CL\d+", raw, re.I)
+    user_ids = re.findall(r"u\d+", raw, re.I)
+    location = next((value for value in _LOCATIONS if value in raw), None)
+    color = next((value for value in _COLORS if value in raw), None)
+    category = next(
+        (
+            normalized
+            for keyword, normalized in _CATEGORY_ALIASES
+            if keyword.lower() in lowered
+        ),
+        None,
+    )
+
+    item_id = item_ids[0].upper() if item_ids else None
+    claim_id = claim_ids[0].upper() if claim_ids else None
+    wants_handover = _contains(
+        raw,
+        r"交接|预约|时段|领取|取回|去取|拿回|领回|什么时候|何时|哪里领|哪儿领|在哪里领|哪里取|在哪取",
+    )
+    wants_status = bool(claim_id) and _contains(
+        raw,
+        r"进度|状态|处理到哪|审核|结果|查|查询|看看|出来了吗|怎么样|到哪",
+    )
+    wants_policy = _contains(
+        raw,
+        r"规则|规定|政策|流程|为什么|为啥|为何|原因|人工复核|人工审核|高价值|贵重|隐私|泄露",
+    )
+    wants_claim = _contains(raw, r"认领|证据|证明|失主|我的|申请") or wants_status
+    wants_search = _contains(
+        raw,
+        r"丢|遗失|遗落|落下|掉了|寻找|找|失物|捡到|捡了|拾到|有没有|看到",
+    ) or bool(category and location and not item_id and not claim_id)
+
+    if claim_id and (wants_status or wants_claim):
+        intent = "认领"
+    elif item_id and wants_handover:
+        intent = "交接"
+    elif wants_policy and not item_id and not claim_id:
+        intent = "规则咨询"
+    elif wants_claim:
+        intent = "认领"
+    elif wants_handover and item_id:
+        intent = "交接"
+    elif wants_search:
+        intent = "寻物"
+    elif wants_policy:
+        intent = "规则咨询"
+    else:
+        intent = "其他"
+
+    return {
+        "intent": intent,
+        "item_id": item_id,
+        "claim_id": claim_id,
+        "user_id": user_ids[0].lower() if user_ids else None,
+        "location": location,
+        "color": color,
+        "category": category,
+        "wants_handover": wants_handover,
+        "wants_status": wants_status,
+        "wants_policy": wants_policy,
+        "wants_claim": wants_claim,
+        "wants_search": wants_search,
+    }
+
+
 # ----------------------------------------------------------------------
 # MockLLM:确定性教学桩
 # ----------------------------------------------------------------------
@@ -109,11 +200,7 @@ class _MockCompletions:
 
     # ---- 子能力 ----
     def _route(self, t):
-        if re.search(r"交接|预约|时段|领取|取回", t): return "交接"
-        if re.search(r"认领|证据|证明|失主", t): return "认领"
-        if re.search(r"丢|遗失|找|失物|捡到", t): return "寻物"
-        if re.search(r"规则|规定|政策|流程", t): return "规则咨询"
-        return "其他"
+        return _parse_user_text(t)["intent"]
 
     def _summarize(self, t):
         item_ids = "、".join(sorted(set(re.findall(r"LF\d+", t, re.I))))
@@ -142,38 +229,15 @@ class _MockCompletions:
         return json.dumps({"pass": bool(ok)}, ensure_ascii=False)
 
     def _intent(self, t):
-        if re.search(r"交接|预约|时段|领取|取回", t): intent = "交接"
-        elif re.search(r"认领|证据|证明|失主", t): intent = "认领"
-        elif re.search(r"丢|遗失|找|失物|捡到", t): intent = "寻物"
-        elif re.search(r"规则|规定|政策|流程", t): intent = "规则咨询"
-        else: intent = "其他"
+        parsed = _parse_user_text(t)
         ent = {}
-        item_ids = re.findall(r"LF\d+", t, re.I)
-        claim_ids = re.findall(r"CL\d+", t, re.I)
-        user_ids = re.findall(r"u\d+", t, re.I)
-        if item_ids: ent["item_id"] = item_ids[0].upper()
-        if claim_ids: ent["claim_id"] = claim_ids[0].upper()
-        if user_ids: ent["user_id"] = user_ids[0].lower()
-        for location in ["图书馆", "教学楼", "食堂", "操场", "宿舍"]:
-            if location in t:
-                ent["location"] = location
-                break
-        for color in ["黑色", "银色", "蓝色", "白色", "红色"]:
-            if color in t:
-                ent["color"] = color
-                break
-        categories = [
-            ("耳机", "耳机"),
-            ("电脑", "笔记本电脑"),
-            ("校园卡", "校园卡"),
-            ("手机", "手机"),
-            ("钥匙", "钥匙"),
-        ]
-        for keyword, category in categories:
-            if keyword in t:
-                ent["category"] = category
-                break
-        return json.dumps({"intent": intent, "entities": ent}, ensure_ascii=False)
+        for key in ("item_id", "claim_id", "user_id", "location", "color", "category"):
+            if parsed.get(key):
+                ent[key] = parsed[key]
+        return json.dumps(
+            {"intent": parsed["intent"], "entities": ent},
+            ensure_ascii=False,
+        )
 
     def _called_tools(self, msgs):
         names = []
@@ -195,9 +259,9 @@ class _MockCompletions:
         avail = {t["function"]["name"] for t in tools}
         called = self._called_tools(msgs)
         observations = self._observations(msgs)
-        item_ids = re.findall(r"LF\d+", user_txt, re.I)
-        claim_ids = re.findall(r"CL\d+", user_txt, re.I)
-        item_id = item_ids[0].upper() if item_ids else None
+        parsed = _parse_user_text(user_txt)
+        claim_id = parsed["claim_id"]
+        item_id = parsed["item_id"]
         if item_id is None:
             for observation in observations:
                 if isinstance(observation, dict) and observation.get("item_id"):
@@ -208,25 +272,21 @@ class _MockCompletions:
                     if item_id:
                         break
 
-        wants_handover = bool(re.search(r"交接|预约|时段|哪里领|取回", user_txt))
-        wants_search = bool(re.search(r"丢|遗失|找|失物|捡到", user_txt))
-        wants_policy = bool(re.search(r"规则|规定|政策|为什么|隐私|人工复核", user_txt))
+        wants_handover = parsed["wants_handover"]
+        wants_search = parsed["wants_search"] or parsed["intent"] == "寻物"
+        wants_policy = parsed["wants_policy"] or parsed["intent"] == "规则咨询"
 
         if item_id and "query_item" in avail and "query_item" not in called:
             return _Resp(_Msg(tool_calls=[_ToolCall("query_item", {"item_id": item_id})]))
 
         if not item_id and wants_search and "search_items" in avail \
            and "search_items" not in called:
-            keyword = next(
-                (value for value in ["耳机", "电脑", "校园卡", "手机", "钥匙"] if value in user_txt),
-                "",
-            )
-            location = next(
-                (value for value in ["图书馆", "教学楼", "食堂", "操场", "宿舍"] if value in user_txt),
-                "",
-            )
             return _Resp(_Msg(tool_calls=[_ToolCall(
-                "search_items", {"keyword": keyword, "location": location}
+                "search_items",
+                {
+                    "keyword": parsed["category"] or "",
+                    "location": parsed["location"] or "",
+                },
             )]))
 
         if item_id and wants_handover and "list_handover_slots" in avail \
@@ -235,15 +295,16 @@ class _MockCompletions:
                 "list_handover_slots", {"item_id": item_id}
             )]))
 
-        if claim_ids and "query_claim" in avail and "query_claim" not in called:
+        if claim_id and "query_claim" in avail and "query_claim" not in called:
             context_text = " ".join(
                 str(message.get("content", "") or "") for message in msgs
             )
             users = re.findall(r"u\d+", context_text, re.I)
-            if users:
+            user_id = parsed["user_id"] or (users[-1].lower() if users else None)
+            if user_id:
                 return _Resp(_Msg(tool_calls=[_ToolCall(
                     "query_claim",
-                    {"claim_id": claim_ids[0].upper(), "user_id": users[-1].lower()},
+                    {"claim_id": claim_id, "user_id": user_id},
                 )]))
         if wants_policy and "search_policy" in avail and "search_policy" not in called:
             return _Resp(_Msg(tool_calls=[_ToolCall("search_policy", {"q": user_txt})]))

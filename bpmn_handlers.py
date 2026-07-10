@@ -55,12 +55,17 @@ def h_verify_evidence(context):
     )
     context["match_score"] = int(matched["match_score"])
     context["matched_features"] = int(matched["matched_features"])
-    claim = _raise_on_error(
-        create_claim(
-            context["item_id"], context["user_id"], context["match_score"]
-        ),
-        "创建认领单",
+    claim = create_claim(
+        context["item_id"], context["user_id"], context["match_score"]
     )
+    if claim.get("error") == "重复认领申请" and claim.get("claim_id"):
+        context["claim_id"] = claim["claim_id"]
+        context["reused_claim"] = True
+        return (
+            f"失物服务核验→ 匹配度={context['match_score']};"
+            f"认领服务→ 复用已有认领单 {context['claim_id']}"
+        )
+    claim = _raise_on_error(claim, "创建认领单")
     context["claim_id"] = claim["claim_id"]
     return (
         f"失物服务核验→ 匹配度={context['match_score']};"

@@ -107,14 +107,45 @@ def expert_search(text, context=None, verbose=False, user_id="u001"):
     )
 
 
+def _recall_item_from_context(context):
+    import re
+
+    for message in reversed(context or []):
+        content = str(message.get("content", "") or "")
+        item_ids = re.findall(r"LF\d+", content, re.I)
+        if item_ids:
+            return item_ids[-1].upper()
+    return None
+
+
+def _merge_claim_evidence(text, context, item_id):
+    fragments = []
+    for message in context or []:
+        if message.get("role") != "user":
+            continue
+        content = str(message.get("content", "") or "").strip()
+        if not content:
+            continue
+        if item_id not in content.upper() and "LF" in content.upper():
+            continue
+        if content not in fragments:
+            fragments.append(content)
+    current = str(text or "").strip()
+    if current and current not in fragments:
+        fragments.append(current)
+    return "\n".join(fragments) if fragments else current
+
+
 def expert_claim(text, context=None, verbose=False, user_id="u001"):
     import re
 
     item_ids = re.findall(r"LF\d+", text, re.I)
-    if item_ids:
+    item_id = item_ids[0].upper() if item_ids else _recall_item_from_context(context)
+    if item_id:
         from bpmn_handlers import run_claim
 
-        final, trace = run_claim(item_ids[0].upper(), user_id, text)
+        evidence = _merge_claim_evidence(text, context, item_id)
+        final, trace = run_claim(item_id, user_id, evidence)
         if verbose:
             for line in trace:
                 print("  " + line)

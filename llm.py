@@ -123,7 +123,13 @@ def _parse_user_text(text):
         raw,
         r"规则|规定|政策|流程|为什么|为啥|为何|原因|人工复核|人工审核|高价值|贵重|隐私|泄露",
     )
-    wants_claim = _contains(raw, r"认领|证据|证明|失主|我的|申请") or wants_status
+    wants_claim = (
+        _contains(
+            raw,
+            r"认领|证据|证明|失主|我的|申请|刻有|划痕|序列号|后四位|盒内|贴纸|姓名|学号",
+        )
+        or wants_status
+    )
     wants_search = _contains(
         raw,
         r"丢|遗失|遗落|落下|掉了|寻找|找|失物|捡到|捡了|拾到|有没有|看到",

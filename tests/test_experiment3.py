@@ -189,6 +189,32 @@ class BpmnHandlerTests(unittest.TestCase):
         self.assertIn("网关「证据匹配度≥80？」→ 选择分支「否」", joined)
         self.assertIn("impl=h_request_evidence", joined)
 
+    def test_supplemental_evidence_reuses_existing_claim(self):
+        with running_server(ItemHandler) as item_base, running_server(
+            ClaimHandler
+        ) as claim_base, running_server(HandoverHandler) as handover_base:
+            tools.ITEM_URL = item_base
+            tools.CLAIM_URL = claim_base
+            tools.HANDOVER_URL = handover_base
+            handover_service.CLAIM_URL = claim_base
+
+            first, _ = run_claim(
+                "LF2026001",
+                "u001",
+                "认领LF2026001 黑色蓝牙耳机(图书馆)",
+            )
+            second, trace = run_claim(
+                "LF2026001",
+                "u001",
+                '蓝牙耳机 图书馆 盒内刻有ZL", "左耳有划痕',
+            )
+
+        joined = "\n".join(trace)
+        self.assertIn("待补充证据", first)
+        self.assertIn("已通过", second)
+        self.assertIn("图书馆服务台", second)
+        self.assertIn("复用已有认领单", joined)
+
 
 class MultiAgentTests(unittest.TestCase):
     def setUp(self):

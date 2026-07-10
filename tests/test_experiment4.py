@@ -192,6 +192,34 @@ class ApplicationTests(unittest.TestCase):
         self.assertIn("认领单CL0001当前状态:已通过", result["reply"])
         self.assertIn("query_claim", result["trace"])
 
+    def test_claim_followups_use_recent_item_and_supplemental_evidence(self):
+        memory = Memory()
+        servers = start_business_services((0, 0, 0))
+        try:
+            search = serve_struct(
+                "u001",
+                "昨天图书馆丢失黑色蓝牙耳机",
+                memory=memory,
+            )
+            claim = serve_struct("u001", "认领", memory=memory)
+            supplement = serve_struct(
+                "u001",
+                '盒内刻有ZL", "左耳有划痕',
+                memory=memory,
+            )
+        finally:
+            stop_servers(servers)
+
+        self.assertEqual(search["intent"], "寻物")
+        self.assertIn("LF2026001", search["reply"])
+        self.assertEqual(claim["intent"], "认领")
+        self.assertIn("待补充证据", claim["reply"])
+        self.assertIn("LF2026001", claim["reply"])
+        self.assertEqual(supplement["intent"], "认领")
+        self.assertIn("已通过", supplement["reply"])
+        self.assertIn("图书馆服务台", supplement["reply"])
+        self.assertIn("复用已有认领单", supplement["trace"])
+
 
 class WebRuntimeTests(unittest.TestCase):
     def test_web_health_does_not_require_business_services(self):

@@ -81,11 +81,27 @@ class ClaimHandler(BaseHTTPRequestHandler):
                 return self._send(400, {"error": "match_score必须是整数"})
             if not 0 <= match_score <= 100:
                 return self._send(400, {"error": "match_score范围必须是0到100"})
-            if any(
-                claim["item_id"] == item_id and claim["user_id"] == user_id
-                for claim in CLAIMS.values()
-            ):
-                return self._send(409, {"error": "重复认领申请"})
+            existing = next(
+                (
+                    claim
+                    for claim in CLAIMS.values()
+                    if claim["item_id"] == item_id and claim["user_id"] == user_id
+                ),
+                None,
+            )
+            if existing:
+                existing["match_score"] = max(
+                    int(existing.get("match_score", 0)), match_score
+                )
+                return self._send(
+                    409,
+                    {
+                        "error": "重复认领申请",
+                        "claim_id": existing["claim_id"],
+                        "status": existing["status"],
+                        "match_score": existing["match_score"],
+                    },
+                )
 
             claim_id = _next_claim_id()
             claim = {

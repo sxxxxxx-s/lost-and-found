@@ -6,6 +6,7 @@ import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from app import serve_struct
+from data import add_found_item, public_item
 from memory import Memory
 
 
@@ -46,7 +47,7 @@ class WebHandler(BaseHTTPRequestHandler):
             self._send(200, page.read(), "text/html; charset=utf-8")
 
     def do_POST(self):
-        if self.path != "/api/chat":
+        if self.path not in ("/api/chat", "/api/items"):
             return self._send(404, {"error": "unknown api"})
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -55,6 +56,20 @@ class WebHandler(BaseHTTPRequestHandler):
             return self._send(400, {"error": "bad json"})
         if not isinstance(request, dict):
             return self._send(400, {"error": "json object required"})
+
+        if self.path == "/api/items":
+            try:
+                item = add_found_item(request)
+            except ValueError as error:
+                return self._send(400, {"error": str(error)})
+            return self._send(
+                201,
+                {
+                    "item_id": item["item_id"],
+                    "item": public_item(item),
+                    "trace": f"[添加失物] 已写入 data.ITEMS: {item['item_id']}",
+                },
+            )
 
         user_id = str(request.get("user_id") or "u001")
         message = str(request.get("message") or "").strip()

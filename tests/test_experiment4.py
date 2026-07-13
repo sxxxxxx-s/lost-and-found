@@ -13,7 +13,7 @@ import services.handover_service as handover_service
 import tools
 from agent import orchestrate
 from app import serve_struct
-from data import APPOINTMENTS, CLAIMS
+from data import APPOINTMENTS, CLAIMS, HANDOVER_SLOTS, ITEMS
 from evaluate import judge, run_eval
 from guardrails import authz_guard, input_guard, pii_mask
 from memory import Memory
@@ -232,6 +232,18 @@ class WebRuntimeTests(unittest.TestCase):
 
 
 class ServerTests(unittest.TestCase):
+    def setUp(self):
+        self._items = {key: dict(value) for key, value in ITEMS.items()}
+        self._slots = {
+            key: list(value) for key, value in HANDOVER_SLOTS.items()
+        }
+
+    def tearDown(self):
+        ITEMS.clear()
+        ITEMS.update(self._items)
+        HANDOVER_SLOTS.clear()
+        HANDOVER_SLOTS.update(self._slots)
+
     def test_business_runtime_configures_three_temporary_urls(self):
         servers = start_business_services((0, 0, 0))
         try:
@@ -291,6 +303,53 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(status, 404)
             self.assertEqual(payload["error"], "unknown api")
 
+    def test_add_found_item_api_writes_generated_item(self):
+        with running_server(WebHandler) as base:
+            status, payload = request_json(
+                base + "/api/items",
+                {
+                    "category": "雨伞",
+                    "color": "黑色",
+                    "found_location": "图书馆",
+                    "found_date": "2026-07-10",
+                    "public_description": "黑色长柄伞",
+                    "secret_features": "伞柄刻有A12\n伞套有蓝色标签",
+                },
+            )
+
+        self.assertEqual(status, 201)
+        self.assertRegex(payload["item_id"], r"^LF\d+$")
+        item = ITEMS[payload["item_id"]]
+        self.assertEqual(item["category"], "雨伞")
+        self.assertEqual(item["color"], "黑色")
+        self.assertEqual(item["found_location"], "图书馆")
+        self.assertEqual(item["found_date"], "2026-07-10")
+        self.assertEqual(item["public_description"], "黑色长柄伞")
+        self.assertEqual(item["secret_features"], ["伞柄刻有A12", "伞套有蓝色标签"])
+        self.assertEqual(item["secret_keywords"], [["a12"], ["伞套有蓝色标签"]])
+        self.assertFalse(item["high_value"])
+        self.assertEqual(item["status"], "待认领")
+        self.assertIn(payload["item_id"], HANDOVER_SLOTS)
+        self.assertNotIn("secret_features", payload["item"])
+        self.assertNotIn("secret_keywords", payload["item"])
+
+    def test_add_found_item_api_rejects_missing_required_field(self):
+        with running_server(WebHandler) as base:
+            status, payload = request_json(
+                base + "/api/items",
+                {
+                    "category": "雨伞",
+                    "color": "",
+                    "found_location": "图书馆",
+                    "found_date": "2026-07-10",
+                    "public_description": "黑色长柄伞",
+                    "secret_features": "伞柄刻有A12",
+                },
+            )
+
+        self.assertEqual(status, 400)
+        self.assertIn("缺少字段:color", payload["error"])
+
 
 class FrontendTests(unittest.TestCase):
     def test_page_reuses_reference_layout_with_personalized_safe_controls(self):
@@ -309,6 +368,10 @@ class FrontendTests(unittest.TestCase):
             "可以直接输入",
             "例如：我昨天在图书馆二楼丢了黑色蓝牙耳机",
             "示例问题",
+            "添加失物",
+            "物品类别",
+            "隐藏特征",
+            "fetch('/api/items'",
             "fetch('/api/chat'",
             "textContent",
         ):
